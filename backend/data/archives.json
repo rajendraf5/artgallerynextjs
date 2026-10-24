@@ -1,0 +1,22 @@
+[
+    {
+        "id": "0e29b81a8ae6214f4cb6e44f",
+        "filename": "9b92dd490391558ff2f3c18ea6600666.jpg",
+        "title": "Beyond Imagination",
+        "description": "Modern Art Collection",
+        "createdAt": "2026-10-22T06:14:10+00:00",
+        "artist": "",
+        "category": "Modern Art",
+        "archivedAt": "2026-10-22T11:18:29+00:00"
+    },
+    {
+        "id": "2b040a4956f339dd34dbb5ba",
+        "filename": "a5a3801ce4d36918575b077b64545072.jpg",
+        "title": "Colourful Dreams",
+        "description": "Contemporary Collection",
+        "createdAt": "2026-10-22T06:13:44+00:00",
+        "artist": "",
+        "category": "Abstract Art",
+        "archivedAt": "2026-10-22T11:18:27+00:00"
+    }
+]
