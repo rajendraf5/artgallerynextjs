@@ -1,5 +1,4 @@
 import { randomBytes } from "node:crypto";
-import { put, del } from "@vercel/blob";
 import { mkdir, open, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
@@ -101,24 +100,6 @@ function extensionForImage(buffer: Buffer): (typeof allowedTypes)[keyof typeof a
   return null;
 }
 
-// async function saveImage(value: FormDataEntryValue | null, required: boolean): Promise<string | null> {
-//   if (!(value instanceof File) || value.size === 0) {
-//     if (required) throw new InputError("Choose an image to upload.");
-//     return null;
-//   }
-//   if (value.size > maxImageSize) throw new InputError("Images must be 8 MB or smaller.");
-//   const buffer = Buffer.from(await value.arrayBuffer());
-//   const extension = extensionForImage(buffer);
-//   if (!extension || !(value.type in allowedTypes) || allowedTypes[value.type as keyof typeof allowedTypes] !== extension) {
-//     throw new InputError("Use a valid JPG, PNG, or WebP image.");
-//   }
-//   await mkdir(uploadDirectory, { recursive: true });
-//   const filename = `${randomBytes(16).toString("hex")}.${extension}`;
-//   await writeFile(path.join(uploadDirectory, filename), buffer, { flag: "wx" });
-//   return filename;
-// }
-
-
 async function saveImage(
   value: FormDataEntryValue | null,
   required: boolean
@@ -145,16 +126,10 @@ async function saveImage(
     throw new InputError("Use a valid JPG, PNG, or WebP image.");
   }
 
-  const blob = await put(
-    `gallery/${randomBytes(16).toString("hex")}.${extension}`,
-    value,
-    {
-      access: "public",
-      addRandomSuffix: true,
-    }
-  );
-
-  return blob.url;
+  await mkdir(uploadDirectory, { recursive: true });
+  const filename = `${randomBytes(16).toString("hex")}.${extension}`;
+  await writeFile(path.join(uploadDirectory, filename), buffer, { flag: "wx" });
+  return filename;
 }
 
 
@@ -307,7 +282,9 @@ async function upload(request: NextRequest, update: boolean): Promise<NextRespon
       return items.map((item) => {
         if (item.id !== id) return item;
         found = true;
-        oldFilename = filename ? path.basename(item.filename) : undefined;
+        oldFilename = filename && !/^https?:\/\//i.test(item.filename)
+          ? path.basename(item.filename)
+          : undefined;
         const replacement = {
           ...item,
           title,
@@ -394,9 +371,11 @@ async function deleteItem(request: NextRequest): Promise<NextResponse> {
       return items.filter((item) => item.id !== body.id);
     });
     if (!filename) return jsonError("That gallery item no longer exists.", 404);
-    await unlink(path.join(uploadDirectory, path.basename(filename))).catch((error: NodeJS.ErrnoException) => {
-      if (error.code !== "ENOENT") throw error;
-    });
+    if (!/^https?:\/\//i.test(filename)) {
+      await unlink(path.join(uploadDirectory, path.basename(filename))).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error;
+      });
+    }
     return NextResponse.json({ deleted: true });
   } catch (error) {
     console.error("Could not remove gallery content.", error);
