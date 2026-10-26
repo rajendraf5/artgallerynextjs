@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { put, del } from "@vercel/blob";
 import { mkdir, open, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
@@ -100,22 +101,62 @@ function extensionForImage(buffer: Buffer): (typeof allowedTypes)[keyof typeof a
   return null;
 }
 
-async function saveImage(value: FormDataEntryValue | null, required: boolean): Promise<string | null> {
+// async function saveImage(value: FormDataEntryValue | null, required: boolean): Promise<string | null> {
+//   if (!(value instanceof File) || value.size === 0) {
+//     if (required) throw new InputError("Choose an image to upload.");
+//     return null;
+//   }
+//   if (value.size > maxImageSize) throw new InputError("Images must be 8 MB or smaller.");
+//   const buffer = Buffer.from(await value.arrayBuffer());
+//   const extension = extensionForImage(buffer);
+//   if (!extension || !(value.type in allowedTypes) || allowedTypes[value.type as keyof typeof allowedTypes] !== extension) {
+//     throw new InputError("Use a valid JPG, PNG, or WebP image.");
+//   }
+//   await mkdir(uploadDirectory, { recursive: true });
+//   const filename = `${randomBytes(16).toString("hex")}.${extension}`;
+//   await writeFile(path.join(uploadDirectory, filename), buffer, { flag: "wx" });
+//   return filename;
+// }
+
+
+async function saveImage(
+  value: FormDataEntryValue | null,
+  required: boolean
+): Promise<string | null> {
   if (!(value instanceof File) || value.size === 0) {
-    if (required) throw new InputError("Choose an image to upload.");
+    if (required) {
+      throw new InputError("Choose an image to upload.");
+    }
     return null;
   }
-  if (value.size > maxImageSize) throw new InputError("Images must be 8 MB or smaller.");
+
+  if (value.size > maxImageSize) {
+    throw new InputError("Images must be 8 MB or smaller.");
+  }
+
   const buffer = Buffer.from(await value.arrayBuffer());
   const extension = extensionForImage(buffer);
-  if (!extension || !(value.type in allowedTypes) || allowedTypes[value.type as keyof typeof allowedTypes] !== extension) {
+
+  if (
+    !extension ||
+    !(value.type in allowedTypes) ||
+    allowedTypes[value.type as keyof typeof allowedTypes] !== extension
+  ) {
     throw new InputError("Use a valid JPG, PNG, or WebP image.");
   }
-  await mkdir(uploadDirectory, { recursive: true });
-  const filename = `${randomBytes(16).toString("hex")}.${extension}`;
-  await writeFile(path.join(uploadDirectory, filename), buffer, { flag: "wx" });
-  return filename;
+
+  const blob = await put(
+    `gallery/${randomBytes(16).toString("hex")}.${extension}`,
+    value,
+    {
+      access: "public",
+      addRandomSuffix: true,
+    }
+  );
+
+  return blob.url;
 }
+
 
 function validId(value: unknown): value is string {
   return typeof value === "string" && /^[a-f0-9]{24}$/.test(value);
