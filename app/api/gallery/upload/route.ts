@@ -23,26 +23,31 @@ export async function POST(request: Request) {
       );
     }
 
-    // Upload the image to persistent Vercel Blob storage.
+    if (file.size > 8 * 1024 * 1024) {
+      return NextResponse.json(
+        { error: "Image must be 8 MB or smaller" },
+        { status: 400 }
+      );
+    }
+
     const blob = await put(
-      `gallery/${crypto.randomUUID()}-${file.name}`,
+      `gallery/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`,
       file,
       {
         access: "public",
-        addRandomSuffix: true,
+        addRandomSuffix: false,
       }
     );
 
     return NextResponse.json({
       success: true,
       url: blob.url,
-      pathname: blob.pathname,
     });
   } catch (error) {
     console.error("Gallery upload failed:", error);
 
     return NextResponse.json(
-      { error: "Could not upload gallery image" },
+      { error: "Image upload failed. Check Vercel Blob configuration." },
       { status: 500 }
     );
   }

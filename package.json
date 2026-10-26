@@ -9,6 +9,7 @@
     "lint": "eslint app components lib eslint.config.mjs"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.2.0",
     "@vercel/blob": "^2.8.2",
     "bcryptjs": "^2.4.3",
     "next": "^15.5.0",
