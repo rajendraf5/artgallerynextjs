@@ -1,29 +1,32 @@
-import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { GalleryData, GalleryItem, GalleryType, ManifestName } from "@/lib/gallery-types";
+import { ART_GALLERY_ENDPOINTS, ApiError, HOME_ABOUT_ENDPOINT, api } from "@/lib/api";
+import type { GalleryData, GalleryItem, GalleryType, HomeAbout, ManifestName } from "@/lib/gallery-types";
 
-export type { GalleryData, GalleryItem, GalleryType, ManifestName } from "@/lib/gallery-types";
+export type { GalleryData, GalleryItem, GalleryType, HomeAbout, ManifestName } from "@/lib/gallery-types";
 
 const projectRoot = process.cwd();
-export const dataDirectory = path.join(projectRoot, "backend", "data");
+// Images are stored by the Next.js app; the FastAPI backend stores only their filenames.
 export const uploadDirectory = path.join(projectRoot, "backend", "uploads");
 
 const manifestNames: Record<GalleryType, ManifestName> = {
   banner: "banners",
   artwork: "artworks",
+  auction: "auctions",
   exhibition: "exhibitions",
   archive: "archives",
   team: "team",
+  testimonial: "testimonials",
 };
 
 export const emptyGallery: GalleryData = {
   banners: [],
   artworks: [],
+  auctions: [],
   exhibitions: [],
   archives: [],
   team: [],
+  testimonials: [],
 };
 
 export const sampleArtworks: GalleryItem[] = [
@@ -85,6 +88,12 @@ export const sampleExhibitions: GalleryItem[] = [
   },
 ];
 
+// Shown in "Upcoming Auctions" until auctions are added from the admin dashboard; they have no date.
+export const sampleAuctions: GalleryItem[] = sampleArtworks.map((artwork) => ({
+  ...artwork,
+  id: artwork.id.replace("sample-", "sample-auction-"),
+}));
+
 export function imageUrl(filename: string): string {
   if (/^https:\/\//i.test(filename)) return filename;
   return `/media/${encodeURIComponent(path.basename(filename))}`;
@@ -94,60 +103,78 @@ export function withImageUrl(item: GalleryItem): GalleryItem {
   return { ...item, imageUrl: imageUrl(item.filename) };
 }
 
+function itemPath(name: ManifestName, id: string): string {
+  return `${ART_GALLERY_ENDPOINTS[name]}/${encodeURIComponent(id)}`;
+}
+
 export async function readManifest(name: ManifestName): Promise<GalleryItem[]> {
-  const filePath = path.join(dataDirectory, `${name}.json`);
-  let raw: string;
+  return api.get<GalleryItem[]>(`${ART_GALLERY_ENDPOINTS[name]}?limit=500`);
+}
+
+// Auctions dated today or later, soonest first.
+export async function readUpcomingAuctions(limit = 500): Promise<GalleryItem[]> {
+  return api.get<GalleryItem[]>(`${ART_GALLERY_ENDPOINTS.auctions}?upcoming=true&limit=${limit}`);
+}
+
+export async function getItem(name: ManifestName, id: string): Promise<GalleryItem | null> {
   try {
-    raw = await readFile(filePath, "utf8");
+    return await api.get<GalleryItem>(itemPath(name, id));
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    if (error instanceof ApiError && error.status === 404) return null;
     throw error;
   }
+}
 
-  const data: unknown = JSON.parse(raw);
-  if (!Array.isArray(data)) throw new Error(`Gallery records in ${name}.json are invalid.`);
-  return data.filter((record): record is GalleryItem => (
-    typeof record === "object" && record !== null
-    && typeof (record as GalleryItem).id === "string"
-    && typeof (record as GalleryItem).filename === "string"
-    && typeof (record as GalleryItem).title === "string"
-  ));
+export async function createItem(name: ManifestName, data: Partial<GalleryItem>): Promise<GalleryItem> {
+  return api.post<GalleryItem>(ART_GALLERY_ENDPOINTS[name], data);
+}
+
+export async function updateItem(name: ManifestName, id: string, data: Partial<GalleryItem>): Promise<GalleryItem> {
+  return api.put<GalleryItem>(itemPath(name, id), data);
+}
+
+export async function deleteItem(name: ManifestName, id: string): Promise<void> {
+  await api.delete(itemPath(name, id));
+}
+
+export async function readHomeAbout(): Promise<HomeAbout | null> {
+  try {
+    const section = await api.get<HomeAbout>(HOME_ABOUT_ENDPOINT);
+    return { ...section, imageUrl: imageUrl(section.filename) };
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+export async function saveHomeAbout(data: Partial<HomeAbout>): Promise<HomeAbout> {
+  const section = await api.put<HomeAbout>(HOME_ABOUT_ENDPOINT, data);
+  return { ...section, imageUrl: imageUrl(section.filename) };
+}
+
+export async function deleteHomeAbout(): Promise<void> {
+  await api.delete(HOME_ABOUT_ENDPOINT);
 }
 
 export async function readGallery(): Promise<GalleryData> {
-  const [banners, artworks, exhibitions, archives, team] = await Promise.all([
+  const [banners, artworks, auctions, exhibitions, archives, team, testimonials] = await Promise.all([
     readManifest("banners"),
     readManifest("artworks"),
+    readManifest("auctions"),
     readManifest("exhibitions"),
     readManifest("archives"),
     readManifest("team"),
+    readManifest("testimonials"),
   ]);
   return {
     banners: banners.map(withImageUrl),
     artworks: artworks.map(withImageUrl),
+    auctions: auctions.map(withImageUrl),
     exhibitions: exhibitions.map(withImageUrl),
     archives: archives.map(withImageUrl),
     team: team.map(withImageUrl),
+    testimonials: testimonials.map(withImageUrl),
   };
-}
-
-let manifestQueue = Promise.resolve();
-
-export async function updateManifest(
-  name: ManifestName,
-  update: (items: GalleryItem[]) => GalleryItem[],
-): Promise<GalleryItem[]> {
-  const operation = manifestQueue.then(async () => {
-    await mkdir(dataDirectory, { recursive: true });
-    const items = update(await readManifest(name));
-    const target = path.join(dataDirectory, `${name}.json`);
-    const temporary = `${target}.${randomBytes(8).toString("hex")}.tmp`;
-    await writeFile(temporary, `${JSON.stringify(items, null, 2)}\n`, { flag: "wx" });
-    await rename(temporary, target);
-    return items;
-  });
-  manifestQueue = operation.then(() => undefined, () => undefined);
-  return operation;
 }
 
 export function manifestForType(type: GalleryType): ManifestName {

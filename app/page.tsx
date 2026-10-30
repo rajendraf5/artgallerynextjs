@@ -1,7 +1,10 @@
 import Link from "next/link";
 import Image from "next/image";
 import { ArtworkCard } from "@/components/ArtworkCard";
-import { readGallery, sampleArtworks, sampleExhibitions, withImageUrl } from "@/lib/gallery";
+import { AuctionCard } from "@/components/AuctionCard";
+import { Testimonials } from "@/components/Testimonials";
+import { readGallery, readHomeAbout, readUpcomingAuctions, sampleArtworks, sampleAuctions, sampleExhibitions, withImageUrl } from "@/lib/gallery";
+import { defaultHomeAbout } from "@/lib/home-about";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +45,11 @@ const defaultBanners = [
 ];
 
 export default async function HomePage() {
-  const data = await readGallery();
+  const [data, savedAbout, upcoming] = await Promise.all([readGallery(), readHomeAbout(), readUpcomingAuctions(4)]);
+  // Samples until the first auction is added; once auctions exist, only upcoming ones (none: section hidden).
+  const auctions = data.auctions.length ? upcoming.map(withImageUrl) : sampleAuctions.map(withImageUrl);
+  const about = savedAbout ?? defaultHomeAbout;
+  const aboutParagraphs = about.description.split(/\n\s*\n/).map((paragraph) => paragraph.trim()).filter(Boolean);
   const artworks = data.artworks.length ? data.artworks : sampleArtworks.map(withImageUrl);
   const exhibitions = data.exhibitions.length ? data.exhibitions : sampleExhibitions.map(withImageUrl);
   const team = data.team;
@@ -119,19 +126,24 @@ export default async function HomePage() {
         </div>
       </section>
 
+      
+
       <section className="exhibition section-padding" id="about">
         <div className="container">
           <div className="row align-items-center g-4">
             <div className="col-lg-6">
-              <Image className="exhibition-image" src="https://images.unsplash.com/photo-1577083552431-6e5fd01aa342?auto=format&fit=crop&w=1000&q=85" alt="Art gallery exhibition space" width={1000} height={700} unoptimized />
+              <Image className="exhibition-image" src={about.imageUrl ?? about.filename} alt={about.title} width={1000} height={700} unoptimized />
             </div>
             <div className="col-lg-6">
               <div className="exhibition-content">
-                <div className="section-label">Experience creativity</div>
-                <h2>A Space Where Art Comes Alive.</h2>
-                <p>We believe art has the power to connect people, express emotions, and transform perspectives. Our gallery brings together established artists and exciting new talent from different creative worlds.</p>
-                <p>Explore carefully selected collections, attend special exhibitions, and discover the stories behind every masterpiece.</p>
-                <Link href="/about" className="btn btn-gallery mt-2">Discover Our Story →</Link>
+                {about.label && <div className="section-label">{about.label}</div>}
+                <h2>{about.title}</h2>
+                {aboutParagraphs.map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+                {about.buttonText && about.buttonLink && (
+                  <div className="mt-4">
+                    <Link href={about.buttonLink} className="btn-gallery ">{about.buttonText} →</Link>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -165,6 +177,23 @@ export default async function HomePage() {
         </div>
       </section>
 
+      {/* {auctions.length > 0 && (
+        <section className="section-padding" id="auctions">
+          <div className="container">
+            <div className="d-flex flex-wrap justify-content-between align-items-end mb-3">
+              <div>
+                <div className="section-label">Curated with passion</div>
+                <h2 className="section-title">Upcoming Auctions</h2>
+              </div>
+              <Link href="/auctions" className="mb-3" style={{ color: "var(--accent)" }}>View all →</Link>
+            </div>
+            <div className="row g-4">
+              {auctions.map((auction) => <AuctionCard key={auction.id} auction={auction} />)}
+            </div>
+          </div>
+        </section>
+      )} */}
+
       <section className="exhibition section-padding" id="artists">
         <div className="container">
           <div className="text-center mb-4">
@@ -185,6 +214,17 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* Hidden until real testimonials are added in the admin; there are no sample ones. */}
+      {data.testimonials.length > 0 && (
+        <section className="testimonials-section" id="testimonials" aria-labelledby="testimonials-heading">
+          <div className="container">
+            <h2 className="testimonials-title" id="testimonials-heading">Client Acknowledgment</h2>
+            <p className="section-description mb-0">Join us for an exhilarating live auction experience where art meets excitement.</p>
+          </div>
+          <Testimonials testimonials={data.testimonials} />
+        </section>
+      )}
       <span id="visit" />
     </main>
   );

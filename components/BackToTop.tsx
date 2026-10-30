@@ -12,11 +12,9 @@ export function BackToTop() {
     return () => window.removeEventListener("scroll", updateVisibility);
   }, []);
 
-  if (!visible) return null;
-
   return (
     <button
-      className="back-to-top"
+      className={`back-to-top${visible ? " show" : ""}`}
       type="button"
       aria-label="Back to top"
       title="Back to top"

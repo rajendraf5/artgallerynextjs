@@ -1,8 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
-import path from "node:path";
-import bcrypt from "bcryptjs";
-import { dataDirectory } from "@/lib/gallery";
+import { ADMIN_CREDENTIALS_ENDPOINT, api } from "@/lib/api";
 
 export const sessionCookieName = "art-gallery-session";
 const sessionDurationSeconds = 60 * 60 * 8;
@@ -53,23 +50,10 @@ export function readAdminSession(token?: string): AdminSession | null {
   }
 }
 
-export async function storedPasswordHash(): Promise<string | null> {
-  try {
-    const value = JSON.parse(await readFile(path.join(dataDirectory, "admin-password.json"), "utf8")) as {
-      passwordHash?: unknown;
-    };
-    if (typeof value.passwordHash !== "string") {
-      throw new Error("Admin password configuration is invalid. Check backend/data/admin-password.json.");
-    }
-    return value.passwordHash;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw error;
-  }
-}
-
 export async function isPasswordConfigured(): Promise<boolean> {
-  return Boolean(process.env.ART_GALLERY_ADMIN_PASSWORD) || (await storedPasswordHash()) !== null;
+  if (process.env.ART_GALLERY_ADMIN_PASSWORD) return true;
+  const status = await api.get<{ configured: boolean }>(ADMIN_CREDENTIALS_ENDPOINT);
+  return status.configured;
 }
 
 export async function verifyPassword(password: string): Promise<boolean> {
@@ -79,15 +63,11 @@ export async function verifyPassword(password: string): Promise<boolean> {
     const expected = Buffer.from(configuredPassword);
     return supplied.length === expected.length && timingSafeEqual(supplied, expected);
   }
-  const hash = await storedPasswordHash();
-  return hash !== null && bcrypt.compare(password, hash);
+  const result = await api.post<{ valid: boolean }>(`${ADMIN_CREDENTIALS_ENDPOINT}/verify`, { password });
+  return result.valid;
 }
 
+// The backend hashes the password; it responds 409 if one is already set.
 export async function savePassword(password: string): Promise<void> {
-  await mkdir(dataDirectory, { recursive: true });
-  const hash = await bcrypt.hash(password, 12);
-  const target = path.join(dataDirectory, "admin-password.json");
-  const temporary = `${target}.${randomBytes(8).toString("hex")}.tmp`;
-  await writeFile(temporary, `${JSON.stringify({ passwordHash: hash }, null, 2)}\n`, { flag: "wx" });
-  await rename(temporary, target);
+  await api.post(ADMIN_CREDENTIALS_ENDPOINT, { password });
 }
